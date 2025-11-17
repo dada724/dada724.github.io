@@ -723,6 +723,9 @@
   <div id="categories-page" class="page">
     <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
       <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <button id="back-from-categories" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-arrow-left text-light-200"></i>
+        </button>
         <h1 class="text-xl font-bold text-white">分类管理</h1>
         <button id="add-category-btn" class="btn p-2 rounded-full hover:bg-dark-100">
           <i class="fa fa-plus text-light-200"></i>
@@ -799,6 +802,9 @@
   <div id="favorites-page" class="page">
     <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
       <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <button id="back-from-favorites" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-arrow-left text-light-200"></i>
+        </button>
         <h1 class="text-xl font-bold text-white">重要联系人</h1>
         <button id="fav-search-btn" class="btn p-2 rounded-full hover:bg-dark-100">
           <i class="fa fa-search text-light-200"></i>
@@ -823,7 +829,10 @@
   <!-- 设置页 -->
   <div id="settings-page" class="page">
     <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
-      <div class="container mx-auto px-4 py-4 flex items-center">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <button id="back-from-settings" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-arrow-left text-light-200"></i>
+        </button>
         <h1 class="text-xl font-bold text-white">设置</h1>
         <div id="sync-status" class="sync-status offline">
           <i class="fa fa-refresh sync-icon"></i>
@@ -1148,6 +1157,9 @@
       document.getElementById('back-from-add').addEventListener('click', () => showPage('home-page'));
       document.getElementById('back-from-detail').addEventListener('click', () => showPage('home-page'));
       document.getElementById('back-from-edit').addEventListener('click', () => showContactDetail(currentContactId));
+      document.getElementById('back-from-categories').addEventListener('click', () => showPage('home-page'));
+      document.getElementById('back-from-favorites').addEventListener('click', () => showPage('home-page'));
+      document.getElementById('back-from-settings').addEventListener('click', () => showPage('home-page'));
       
       // 添加联系人按钮
       document.getElementById('add-contact-btn').addEventListener('click', () => showPage('add-contact-page'));
@@ -1594,8 +1606,14 @@
           if (category === '全部') {
             renderContacts();
           } else {
-            // 这里可以添加按分类过滤的逻辑
-            renderContacts();
+            // 按分类过滤联系人
+            const categoryValue = getCategoryValue(category);
+            if (categoryValue) {
+              const filteredContacts = contacts.filter(contact => contact.category === categoryValue);
+              renderContactsByFilter(filteredContacts);
+            } else {
+              renderContacts();
+            }
           }
         });
       });
@@ -1617,8 +1635,275 @@
       
       // 过滤按钮点击事件
       document.getElementById('filter-btn').addEventListener('click', () => {
-        showToast('过滤功能即将上线');
+        showFilterModal();
       });
+      
+      // 设置页面数据管理功能
+      setupDataManagement();
+    }
+    
+    // 根据分类名称获取分类值
+    function getCategoryValue(categoryName) {
+      const categories = {
+        '未分类': 'all',
+        '重要': 'important',
+        '合作伙伴': 'partner',
+        '供应商': 'supplier',
+        '客户': 'customer'
+      };
+      
+      return categories[categoryName];
+    }
+    
+    // 根据过滤条件渲染联系人
+    function renderContactsByFilter(filteredContacts) {
+      const contactsList = document.getElementById('contacts-list');
+      const emptyState = document.getElementById('empty-state');
+      
+      // 清空列表
+      contactsList.innerHTML = '';
+      
+      // 显示空状态或联系人列表
+      if (filteredContacts.length === 0) {
+        emptyState.classList.remove('hidden');
+        contactsList.appendChild(emptyState);
+      } else {
+        emptyState.classList.add('hidden');
+        
+        // 添加联系人卡片
+        filteredContacts.forEach(contact => {
+          const contactCard = createContactCard(contact);
+          contactsList.appendChild(contactCard);
+        });
+      }
+    }
+    
+    // 显示过滤模态框
+    function showFilterModal() {
+      // 创建模态框
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center';
+      
+      // 模态框内容
+      modal.innerHTML = `
+        <div class="bg-dark-200 rounded-lg p-6 w-5/6 max-w-md">
+          <h3 class="text-xl font-bold text-light-100 mb-4">过滤联系人</h3>
+          
+          <div class="mb-6">
+            <label class="block text-light-200 mb-2">分类</label>
+            <select id="filter-category" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+              <option value="all">全部</option>
+              <option value="important">重要</option>
+              <option value="partner">合作伙伴</option>
+              <option value="supplier">供应商</option>
+              <option value="customer">客户</option>
+            </select>
+          </div>
+          
+          <div class="mb-6">
+            <label class="block text-light-200 mb-2">重要程度</label>
+            <div class="flex items-center">
+              <input type="checkbox" id="filter-favorite" class="w-5 h-5 rounded bg-dark-100 border border-light-300 text-primary focus:ring-primary">
+              <label for="filter-favorite" class="ml-2 text-light-200">仅显示重要联系人</label>
+            </div>
+          </div>
+          
+          <div class="flex space-x-4">
+            <button id="reset-filter" class="btn flex-1 py-3 bg-dark-100 text-light-100 rounded-lg font-medium">
+              重置
+            </button>
+            <button id="apply-filter" class="btn flex-1 py-3 bg-primary text-white rounded-lg font-medium">
+              应用
+            </button>
+          </div>
+        </div>
+      `;
+      
+      // 添加到页面
+      document.body.appendChild(modal);
+      
+      // 重置按钮事件
+      document.getElementById('reset-filter').addEventListener('click', () => {
+        document.body.removeChild(modal);
+        renderContacts();
+        
+        // 重置分类按钮样式
+        const categoryBtns = document.querySelectorAll('.category-btn');
+        categoryBtns.forEach(b => {
+          b.classList.remove('bg-primary', 'text-white');
+          b.classList.add('bg-dark-100', 'text-light-200');
+        });
+        categoryBtns[0].classList.remove('bg-dark-100', 'text-light-200');
+        categoryBtns[0].classList.add('bg-primary', 'text-white');
+      });
+      
+      // 应用按钮事件
+      document.getElementById('apply-filter').addEventListener('click', () => {
+        const category = document.getElementById('filter-category').value;
+        const onlyFavorite = document.getElementById('filter-favorite').checked;
+        
+        // 应用过滤
+        let filteredContacts = contacts;
+        
+        if (category !== 'all') {
+          filteredContacts = filteredContacts.filter(contact => contact.category === category);
+        }
+        
+        if (onlyFavorite) {
+          filteredContacts = filteredContacts.filter(contact => contact.favorite);
+        }
+        
+        // 渲染过滤结果
+        renderContactsByFilter(filteredContacts);
+        
+        // 更新分类按钮样式
+        const categoryBtns = document.querySelectorAll('.category-btn');
+        categoryBtns.forEach(b => {
+          b.classList.remove('bg-primary', 'text-white');
+          b.classList.add('bg-dark-100', 'text-light-200');
+        });
+        
+        if (category === 'all') {
+          categoryBtns[0].classList.remove('bg-dark-100', 'text-light-200');
+          categoryBtns[0].classList.add('bg-primary', 'text-white');
+        } else {
+          const categoryName = getCategoryName(category);
+          categoryBtns.forEach((btn, index) => {
+            if (btn.textContent.trim() === categoryName) {
+              btn.classList.remove('bg-dark-100', 'text-light-200');
+              btn.classList.add('bg-primary', 'text-white');
+            }
+          });
+        }
+        
+        // 关闭模态框
+        document.body.removeChild(modal);
+        
+        // 显示过滤结果提示
+        showToast(`找到 ${filteredContacts.length} 个联系人`);
+      });
+    }
+    
+    // 设置数据管理功能
+    function setupDataManagement() {
+      // 导出数据按钮
+      const exportBtn = document.querySelector('button:has(.fa-download)');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', exportContacts);
+      }
+      
+      // 导入数据按钮
+      const importBtn = document.querySelector('button:has(.fa-upload)');
+      if (importBtn) {
+        importBtn.addEventListener('click', () => {
+          // 创建文件输入框
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.json';
+          
+          input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (file) {
+              const reader = new FileReader();
+              
+              reader.onload = function(e) {
+                try {
+                  const data = JSON.parse(e.target.result);
+                  importContacts(data);
+                } catch (error) {
+                  showToast('导入失败：无效的数据格式');
+                }
+              };
+              
+              reader.readAsText(file);
+            }
+          };
+          
+          input.click();
+        });
+      }
+      
+      // 备份数据按钮
+      const backupBtn = document.querySelector('button:has(.fa-cloud-upload)');
+      if (backupBtn) {
+        backupBtn.addEventListener('click', backupContacts);
+      }
+    }
+    
+    // 导出联系人数据
+    function exportContacts() {
+      // 创建导出数据
+      const exportData = {
+        contacts: contacts,
+        exportDate: new Date().toISOString(),
+        version: '1.0'
+      };
+      
+      // 转换为JSON字符串
+      const dataStr = JSON.stringify(exportData, null, 2);
+      
+      // 创建Blob对象
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      
+      // 创建下载链接
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `business-contacts-export-${new Date().toISOString().split('T')[0]}.json`;
+      
+      // 触发下载
+      document.body.appendChild(a);
+      a.click();
+      
+      // 清理
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+      
+      // 显示成功提示
+      showToast('联系人数据已导出');
+    }
+    
+    // 导入联系人数据
+    function importContacts(data) {
+      // 验证数据格式
+      if (!data || !Array.isArray(data.contacts)) {
+        showToast('导入失败：无效的数据格式');
+        return;
+      }
+      
+      // 确认导入
+      if (confirm(`确定要导入 ${data.contacts.length} 个联系人吗？这将覆盖现有数据。`)) {
+        // 更新联系人列表
+        contacts = data.contacts;
+        
+        // 保存到本地存储
+        saveContacts();
+        
+        // 重新渲染列表
+        renderContacts();
+        renderFavorites();
+        
+        // 显示成功提示
+        showToast(`成功导入 ${data.contacts.length} 个联系人`);
+      }
+    }
+    
+    // 备份联系人数据
+    function backupContacts() {
+      // 创建备份数据
+      const backupData = {
+        contacts: contacts,
+        backupDate: new Date().toISOString(),
+        version: '1.0'
+      };
+      
+      // 保存到localStorage
+      localStorage.setItem('contactsBackup', JSON.stringify(backupData));
+      
+      // 显示成功提示
+      showToast('联系人数据已备份');
     }
     
     // 辅助函数：保存联系人到本地存储
@@ -1988,6 +2273,14 @@
         const email = document.getElementById('share-email').value;
         
         if (email) {
+          // 模拟共享成功
+          setTimeout(() => {
+            document.body.removeChild(modal);
+            showToast('联系人共享成功');
+          }, 1000);
+        } else {
+          showToast('请输入有效的邮箱地址');
+        }
           // 模拟共享API请求
           setTimeout(() => {
             document.body.removeChild(modal);
