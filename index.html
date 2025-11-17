@@ -1,0 +1,2080 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>商务通讯录</title>
+  <!-- Tailwind CSS v3 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <!-- Quill.js 富文本编辑器 -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  <!-- Mock Service Worker (用于模拟云同步API) -->
+  <script src="https://cdn.jsdelivr.net/npm/msw@2.3.5/dist/msw.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#3B82F6',
+            secondary: '#10B981',
+            dark: {
+              100: '#1E293B',
+              200: '#0F172A',
+              300: '#020617'
+            },
+            light: {
+              100: '#F8FAFC',
+              200: '#E2E8F0',
+              300: '#94A3B8'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          boxShadow: {
+            'card': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            'card-hover': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+          }
+        }
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .text-shadow {
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .transition-all-300 {
+        transition: all 300ms ease-in-out;
+      }
+      .glass-effect {
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+    }
+  </style>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background-color: #020617;
+      color: #F8FAFC;
+      min-height: 100vh;
+    }
+    
+    .page {
+      display: none;
+      min-height: 100vh;
+      padding-bottom: 80px;
+    }
+    
+    .page.active {
+      display: block;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .contact-card {
+      transition: all 0.3s ease;
+    }
+    
+    .contact-card:hover {
+      transform: translateY(-5px);
+    }
+    
+    .btn {
+      transition: all 0.2s ease;
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+    }
+    
+    .input-field {
+      background-color: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      transition: all 0.3s ease;
+    }
+    
+    .input-field:focus {
+      border-color: #3B82F6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+    
+    .tab-indicator {
+      transition: transform 0.3s ease;
+    }
+    
+    .floating-btn {
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      transition: all 0.3s ease;
+    }
+    
+    .floating-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+    }
+    
+    .action-btn {
+      transition: all 0.2s ease;
+    }
+    
+    .action-btn:hover {
+      transform: scale(1.1);
+    }
+    
+    .search-container {
+      position: relative;
+    }
+    
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+    
+    .search-results.active {
+      display: block;
+      animation: slideDown 0.2s ease;
+    }
+    
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    
+    /* 富文本编辑器样式 */
+    .quill-editor {
+      height: 200px;
+      background-color: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 0.5rem;
+      color: #F8FAFC;
+    }
+    
+    .ql-toolbar {
+      background-color: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-bottom: none;
+      border-radius: 0.5rem 0.5rem 0 0;
+    }
+    
+    .ql-container {
+      background-color: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-top: none;
+      border-radius: 0 0 0.5rem 0.5rem;
+      height: calc(100% - 42px);
+    }
+    
+    .ql-editor {
+      color: #F8FAFC;
+      min-height: 158px;
+    }
+    
+    .ql-editor p,
+    .ql-editor h1,
+    .ql-editor h2,
+    .ql-editor h3,
+    .ql-editor ul,
+    .ql-editor ol {
+      color: #F8FAFC;
+    }
+    
+    .ql-editor img {
+      max-width: 100%;
+      height: auto;
+      margin: 10px 0;
+      border-radius: 4px;
+    }
+    
+    .ql-toolbar .ql-stroke {
+      stroke: #94A3B8;
+    }
+    
+    .ql-toolbar .ql-fill {
+      fill: #94A3B8;
+    }
+    
+    .ql-toolbar .ql-picker {
+      color: #94A3B8;
+    }
+    
+    /* 头像上传样式 */
+    .avatar-upload {
+      position: relative;
+      display: inline-block;
+      cursor: pointer;
+    }
+    
+    .avatar-upload input {
+      display: none;
+    }
+    
+    .avatar-preview {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #3B82F6;
+      transition: all 0.3s ease;
+    }
+    
+    .avatar-preview:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+    }
+    
+    .avatar-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+      width: 100%;
+      height: 0;
+      transition: .3s ease;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .avatar-upload:hover .avatar-overlay {
+      height: 100%;
+    }
+    
+    .avatar-icon {
+      color: white;
+      font-size: 24px;
+    }
+    
+    /* 云同步样式 */
+    .sync-status {
+      display: flex;
+      align-items: center;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin-left: auto;
+    }
+    
+    .sync-status.online {
+      background-color: rgba(16, 185, 129, 0.2);
+      color: #10B981;
+    }
+    
+    .sync-status.offline {
+      background-color: rgba(239, 68, 68, 0.2);
+      color: #EF4444;
+    }
+    
+    .sync-icon {
+      margin-right: 5px;
+      animation: spin 2s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    /* 富文本内容样式 */
+    .rich-content {
+      color: #F8FAFC;
+      line-height: 1.6;
+    }
+    
+    .rich-content p {
+      margin-bottom: 10px;
+    }
+    
+    .rich-content h1,
+    .rich-content h2,
+    .rich-content h3 {
+      margin: 15px 0 10px;
+      font-weight: 600;
+    }
+    
+    .rich-content h1 {
+      font-size: 1.5rem;
+    }
+    
+    .rich-content h2 {
+      font-size: 1.3rem;
+    }
+    
+    .rich-content h3 {
+      font-size: 1.1rem;
+    }
+    
+    .rich-content ul,
+    .rich-content ol {
+      margin: 10px 0 10px 20px;
+    }
+    
+    .rich-content ul {
+      list-style-type: disc;
+    }
+    
+    .rich-content ol {
+      list-style-type: decimal;
+    }
+    
+    .rich-content img {
+      max-width: 100%;
+      height: auto;
+      margin: 10px 0;
+      border-radius: 4px;
+    }
+    
+    /* 加载动画 */
+    .loader {
+      border: 3px solid rgba(59, 130, 246, 0.3);
+      border-radius: 50%;
+      border-top: 3px solid #3B82F6;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <!-- 首页 -->
+  <div id="home-page" class="page active">
+    <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-white">商务通讯录</h1>
+        <button id="search-btn" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-search text-light-200"></i>
+        </button>
+      </div>
+      
+      <!-- 搜索框 (默认隐藏) -->
+      <div id="search-container" class="search-container px-4 pb-4 hidden">
+        <div class="relative">
+          <input type="text" id="search-input" placeholder="搜索联系人、公司..." 
+                 class="input-field w-full py-3 px-4 pr-10 rounded-lg text-light-100">
+          <button id="close-search" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-light-300">
+            <i class="fa fa-times"></i>
+          </button>
+        </div>
+        
+        <!-- 搜索结果 -->
+        <div id="search-results" class="search-results glass-effect mt-2 rounded-lg shadow-lg">
+          <!-- 搜索结果将通过JS动态添加 -->
+        </div>
+      </div>
+    </header>
+    
+    <!-- 分类标签 -->
+    <div class="container mx-auto px-4 py-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold text-light-100">联系人</h2>
+        <div class="flex space-x-2">
+          <button id="sort-btn" class="btn p-2 rounded-full hover:bg-dark-100">
+            <i class="fa fa-sort text-light-200"></i>
+          </button>
+          <button id="filter-btn" class="btn p-2 rounded-full hover:bg-dark-100">
+            <i class="fa fa-filter text-light-200"></i>
+          </button>
+        </div>
+      </div>
+      
+      <div class="flex overflow-x-auto scrollbar-hide space-x-3 py-2">
+        <button class="category-btn whitespace-nowrap px-4 py-2 rounded-full bg-primary text-white">
+          全部
+        </button>
+        <button class="category-btn whitespace-nowrap px-4 py-2 rounded-full bg-dark-100 text-light-200 hover:bg-dark-100/80">
+          重要
+        </button>
+        <button class="category-btn whitespace-nowrap px-4 py-2 rounded-full bg-dark-100 text-light-200 hover:bg-dark-100/80">
+          合作伙伴
+        </button>
+        <button class="category-btn whitespace-nowrap px-4 py-2 rounded-full bg-dark-100 text-light-200 hover:bg-dark-100/80">
+          供应商
+        </button>
+        <button class="category-btn whitespace-nowrap px-4 py-2 rounded-full bg-dark-100 text-light-200 hover:bg-dark-100/80">
+          客户
+        </button>
+      </div>
+    </div>
+    
+    <!-- 联系人列表 -->
+    <div id="contacts-list" class="container mx-auto px-4 pb-20">
+      <!-- 联系人卡片将通过JS动态添加 -->
+      <div class="empty-state" id="empty-state">
+        <div class="w-20 h-20 rounded-full bg-dark-100 flex items-center justify-center mb-4">
+          <i class="fa fa-address-book-o text-3xl text-light-300"></i>
+        </div>
+        <h3 class="text-xl font-medium text-light-100 mb-2">暂无联系人</h3>
+        <p class="text-light-300 mb-6">点击右下角按钮添加您的第一个联系人</p>
+        <button id="empty-add-btn" class="btn px-6 py-3 bg-primary text-white rounded-lg font-medium">
+          添加联系人
+        </button>
+      </div>
+    </div>
+    
+    <!-- 底部导航 -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-dark-300 border-t border-dark-100 z-10">
+      <div class="container mx-auto px-4">
+        <div class="flex justify-around py-3">
+          <button class="nav-btn flex flex-col items-center text-primary" data-page="home-page">
+            <i class="fa fa-home text-xl"></i>
+            <span class="text-xs mt-1">首页</span>
+          </button>
+          <button class="nav-btn flex flex-col items-center text-light-300" data-page="categories-page">
+            <i class="fa fa-th-large text-xl"></i>
+            <span class="text-xs mt-1">分类</span>
+          </button>
+          <div class="relative -mt-8">
+            <button id="add-contact-btn" class="floating-btn w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white shadow-lg">
+              <i class="fa fa-plus text-xl"></i>
+            </button>
+          </div>
+          <button class="nav-btn flex flex-col items-center text-light-300" data-page="favorites-page">
+            <i class="fa fa-star-o text-xl"></i>
+            <span class="text-xs mt-1">重要</span>
+          </button>
+          <button class="nav-btn flex flex-col items-center text-light-300" data-page="settings-page">
+            <i class="fa fa-cog text-xl"></i>
+            <span class="text-xs mt-1">设置</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+  </div>
+  
+  <!-- 添加联系人页 -->
+  <div id="add-contact-page" class="page">
+    <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <button id="back-from-add" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-arrow-left text-light-200"></i>
+        </button>
+        <h1 class="text-xl font-bold text-white">添加联系人</h1>
+        <button id="save-contact-btn" class="btn px-4 py-2 bg-primary text-white rounded-lg font-medium">
+          保存
+        </button>
+      </div>
+    </header>
+    
+    <div class="container mx-auto px-4 py-6">
+      <form id="add-contact-form">
+        <!-- 头像上传 -->
+        <div class="mb-6 flex flex-col items-center">
+          <div class="avatar-upload mb-4">
+            <label for="avatar-input">
+              <img id="avatar-preview" class="avatar-preview" src="https://p3-doubao-search-sign.byteimg.com/pgc-image/6323b43dac9b41db978bffd8c580ac63~tplv-be4g95zd3a-image.jpeg?rk3s=542c0f93&x-expires=1778901982&x-signature=Z6canz3kyNW8eqE0srakLjLxx80%3D" alt="头像预览">
+              <div class="avatar-overlay">
+                <i class="fa fa-camera avatar-icon"></i>
+              </div>
+            </label>
+            <input type="file" id="avatar-input" accept="image/*" class="hidden">
+          </div>
+          <p class="text-light-300 text-sm">点击上传头像</p>
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">姓名</label>
+          <input type="text" id="name" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <label class="block text-light-200 mb-2">公司</label>
+            <input type="text" id="company" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+          </div>
+          <div>
+            <label class="block text-light-200 mb-2">职务</label>
+            <input type="text" id="position" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+          </div>
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">联系方式</label>
+          <input type="text" id="contact" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">公司简介</label>
+          <div id="company-intro-editor" class="quill-editor"></div>
+          <input type="hidden" id="company-intro" name="company-intro">
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">初识场合</label>
+          <input type="text" id="occasion" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">分类</label>
+          <select id="category" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+            <option value="all">未分类</option>
+            <option value="important">重要</option>
+            <option value="partner">合作伙伴</option>
+            <option value="supplier">供应商</option>
+            <option value="customer">客户</option>
+          </select>
+        </div>
+        
+        <div class="flex items-center mb-6">
+          <input type="checkbox" id="favorite" class="w-5 h-5 rounded bg-dark-100 border border-light-300 text-primary focus:ring-primary">
+          <label for="favorite" class="ml-2 text-light-200">标记为重要</label>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- 联系人详情页 -->
+  <div id="contact-detail-page" class="page">
+    <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <button id="back-from-detail" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-arrow-left text-light-200"></i>
+        </button>
+        <div class="flex space-x-2">
+          <button id="edit-contact-btn" class="btn p-2 rounded-full hover:bg-dark-100">
+            <i class="fa fa-pencil text-light-200"></i>
+          </button>
+          <button id="delete-contact-btn" class="btn p-2 rounded-full hover:bg-dark-100">
+            <i class="fa fa-trash text-light-200"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+    
+    <div class="container mx-auto px-4 py-6">
+      <div class="flex flex-col items-center mb-8">
+        <img id="detail-avatar" class="w-24 h-24 rounded-full object-cover border-2 border-primary mb-4" src="https://p3-doubao-search-sign.byteimg.com/pgc-image/6323b43dac9b41db978bffd8c580ac63~tplv-be4g95zd3a-image.jpeg?rk3s=542c0f93&x-expires=1778901982&x-signature=Z6canz3kyNW8eqE0srakLjLxx80%3D" alt="联系人头像">
+        <span id="detail-initials" class="hidden text-3xl font-bold text-primary">JD</span>
+        <h2 id="detail-name" class="text-2xl font-bold text-light-100">张三</h2>
+        <div class="flex items-center mt-1">
+          <span id="detail-company" class="text-light-200">阿里巴巴</span>
+          <span class="mx-2 text-light-300">•</span>
+          <span id="detail-position" class="text-light-200">产品经理</span>
+        </div>
+        <span id="detail-category" class="badge mt-3 bg-primary/20 text-primary">重要</span>
+      </div>
+      
+      <div class="space-y-6">
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-300 text-sm mb-2">联系方式</h3>
+          <div class="flex items-center">
+            <i class="fa fa-phone text-primary mr-3"></i>
+            <span id="detail-contact" class="text-light-100">13800138000</span>
+          </div>
+        </div>
+        
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-300 text-sm mb-2">公司简介</h3>
+          <div id="detail-company-intro" class="rich-content">
+            <p>阿里巴巴集团致力于赋能企业，帮助其变革营销、销售和经营的方式，提升其效率。</p>
+          </div>
+        </div>
+        
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-300 text-sm mb-2">初识场合</h3>
+          <p id="detail-occasion" class="text-light-100">2023年上海互联网大会</p>
+        </div>
+        
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-300 text-sm mb-2">添加时间</h3>
+          <p id="detail-date" class="text-light-100">2023-06-15</p>
+        </div>
+      </div>
+      
+      <div class="mt-8 flex space-x-4">
+        <button id="call-btn" class="btn flex-1 py-3 bg-primary text-white rounded-lg font-medium flex items-center justify-center">
+          <i class="fa fa-phone mr-2"></i> 拨打电话
+        </button>
+        <button id="message-btn" class="btn flex-1 py-3 bg-dark-100 text-light-100 rounded-lg font-medium flex items-center justify-center">
+          <i class="fa fa-comment mr-2"></i> 发送消息
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 编辑联系人页 -->
+  <div id="edit-contact-page" class="page">
+    <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <button id="back-from-edit" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-arrow-left text-light-200"></i>
+        </button>
+        <h1 class="text-xl font-bold text-white">编辑联系人</h1>
+        <button id="update-contact-btn" class="btn px-4 py-2 bg-primary text-white rounded-lg font-medium">
+          更新
+        </button>
+      </div>
+    </header>
+    
+    <div class="container mx-auto px-4 py-6">
+      <form id="edit-contact-form">
+        <input type="hidden" id="edit-id">
+        <input type="hidden" id="edit-avatar">
+        
+        <!-- 头像上传 -->
+        <div class="mb-6 flex flex-col items-center">
+          <div class="avatar-upload mb-4">
+            <label for="edit-avatar-input">
+              <img id="edit-avatar-preview" class="avatar-preview" src="https://p3-doubao-search-sign.byteimg.com/pgc-image/6323b43dac9b41db978bffd8c580ac63~tplv-be4g95zd3a-image.jpeg?rk3s=542c0f93&x-expires=1778901982&x-signature=Z6canz3kyNW8eqE0srakLjLxx80%3D" alt="头像预览">
+              <div class="avatar-overlay">
+                <i class="fa fa-camera avatar-icon"></i>
+              </div>
+            </label>
+            <input type="file" id="edit-avatar-input" accept="image/*" class="hidden">
+          </div>
+          <p class="text-light-300 text-sm">点击上传头像</p>
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">姓名</label>
+          <input type="text" id="edit-name" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <label class="block text-light-200 mb-2">公司</label>
+            <input type="text" id="edit-company" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+          </div>
+          <div>
+            <label class="block text-light-200 mb-2">职务</label>
+            <input type="text" id="edit-position" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+          </div>
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">联系方式</label>
+          <input type="text" id="edit-contact" class="input-field w-full py-3 px-4 rounded-lg text-light-100" required>
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">公司简介</label>
+          <div id="edit-company-intro-editor" class="quill-editor"></div>
+          <input type="hidden" id="edit-company-intro" name="edit-company-intro">
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">初识场合</label>
+          <input type="text" id="edit-occasion" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+        </div>
+        
+        <div class="mb-6">
+          <label class="block text-light-200 mb-2">分类</label>
+          <select id="edit-category" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+            <option value="all">未分类</option>
+            <option value="important">重要</option>
+            <option value="partner">合作伙伴</option>
+            <option value="supplier">供应商</option>
+            <option value="customer">客户</option>
+          </select>
+        </div>
+        
+        <div class="flex items-center mb-6">
+          <input type="checkbox" id="edit-favorite" class="w-5 h-5 rounded bg-dark-100 border border-light-300 text-primary focus:ring-primary">
+          <label for="edit-favorite" class="ml-2 text-light-200">标记为重要</label>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- 分类页 -->
+  <div id="categories-page" class="page">
+    <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold text-white">分类管理</h1>
+        <button id="add-category-btn" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-plus text-light-200"></i>
+        </button>
+      </div>
+    </header>
+    
+    <div class="container mx-auto px-4 py-6">
+      <div class="space-y-4">
+        <div class="category-item bg-dark-100 rounded-lg p-4 flex justify-between items-center">
+          <div>
+            <h3 class="text-light-100 font-medium">重要</h3>
+            <p class="text-light-300 text-sm">5个联系人</p>
+          </div>
+          <div class="flex space-x-2">
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-pencil text-light-300"></i>
+            </button>
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-trash text-light-300"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="category-item bg-dark-100 rounded-lg p-4 flex justify-between items-center">
+          <div>
+            <h3 class="text-light-100 font-medium">合作伙伴</h3>
+            <p class="text-light-300 text-sm">3个联系人</p>
+          </div>
+          <div class="flex space-x-2">
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-pencil text-light-300"></i>
+            </button>
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-trash text-light-300"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="category-item bg-dark-100 rounded-lg p-4 flex justify-between items-center">
+          <div>
+            <h3 class="text-light-100 font-medium">供应商</h3>
+            <p class="text-light-300 text-sm">2个联系人</p>
+          </div>
+          <div class="flex space-x-2">
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-pencil text-light-300"></i>
+            </button>
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-trash text-light-300"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="category-item bg-dark-100 rounded-lg p-4 flex justify-between items-center">
+          <div>
+            <h3 class="text-light-100 font-medium">客户</h3>
+            <p class="text-light-300 text-sm">4个联系人</p>
+          </div>
+          <div class="flex space-x-2">
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-pencil text-light-300"></i>
+            </button>
+            <button class="action-btn p-2 rounded-full hover:bg-dark-200">
+              <i class="fa fa-trash text-light-300"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 重要联系人页 -->
+  <div id="favorites-page" class="page">
+    <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
+      <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold text-white">重要联系人</h1>
+        <button id="fav-search-btn" class="btn p-2 rounded-full hover:bg-dark-100">
+          <i class="fa fa-search text-light-200"></i>
+        </button>
+      </div>
+    </header>
+    
+    <div class="container mx-auto px-4 py-6">
+      <div id="favorites-list" class="space-y-4">
+        <!-- 重要联系人将通过JS动态添加 -->
+        <div class="empty-state" id="favorites-empty-state">
+          <div class="w-20 h-20 rounded-full bg-dark-100 flex items-center justify-center mb-4">
+            <i class="fa fa-star-o text-3xl text-light-300"></i>
+          </div>
+          <h3 class="text-xl font-medium text-light-100 mb-2">暂无重要联系人</h3>
+          <p class="text-light-300">在联系人详情页中标记重要联系人</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 设置页 -->
+  <div id="settings-page" class="page">
+    <header class="sticky top-0 z-10 bg-dark-300 border-b border-dark-100">
+      <div class="container mx-auto px-4 py-4 flex items-center">
+        <h1 class="text-xl font-bold text-white">设置</h1>
+        <div id="sync-status" class="sync-status offline">
+          <i class="fa fa-refresh sync-icon"></i>
+          <span>未同步</span>
+        </div>
+      </div>
+    </header>
+    
+    <div class="container mx-auto px-4 py-6">
+      <div class="space-y-6">
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-100 font-medium mb-4">云同步</h3>
+          <div class="space-y-3">
+            <div class="flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <div>
+                <span class="text-light-200">云同步</span>
+                <p class="text-light-300 text-xs mt-1">自动同步联系人数据</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="sync-toggle" class="sr-only peer" checked>
+                <div class="w-11 h-6 bg-dark-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            <button id="sync-now-btn" class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">立即同步</span>
+              <i class="fa fa-refresh text-light-300"></i>
+            </button>
+            <div class="flex justify-between items-center p-3 rounded-lg">
+              <span class="text-light-200">最后同步</span>
+              <span id="last-sync-time" class="text-light-300">从未</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-100 font-medium mb-4">共享管理</h3>
+          <div class="space-y-3">
+            <button id="share-contacts-btn" class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">共享联系人</span>
+              <i class="fa fa-share-alt text-light-300"></i>
+            </button>
+            <button id="shared-with-me-btn" class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">与我共享</span>
+              <i class="fa fa-users text-light-300"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-100 font-medium mb-4">数据管理</h3>
+          <div class="space-y-3">
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">导出数据</span>
+              <i class="fa fa-download text-light-300"></i>
+            </button>
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">导入数据</span>
+              <i class="fa fa-upload text-light-300"></i>
+            </button>
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">备份数据</span>
+              <i class="fa fa-cloud-upload text-light-300"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-100 font-medium mb-4">应用设置</h3>
+          <div class="space-y-3">
+            <div class="flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">深色模式</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" value="" class="sr-only peer" checked>
+                <div class="w-11 h-6 bg-dark-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">通知设置</span>
+              <i class="fa fa-bell-o text-light-300"></i>
+            </button>
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">隐私设置</span>
+              <i class="fa fa-lock text-light-300"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="bg-dark-100 rounded-lg p-4">
+          <h3 class="text-light-100 font-medium mb-4">关于</h3>
+          <div class="space-y-3">
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">版本信息</span>
+              <span class="text-light-300">v1.0.0</span>
+            </button>
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">帮助中心</span>
+              <i class="fa fa-question-circle text-light-300"></i>
+            </button>
+            <button class="w-full flex justify-between items-center p-3 rounded-lg hover:bg-dark-200">
+              <span class="text-light-200">反馈建议</span>
+              <i class="fa fa-comment-o text-light-300"></i>
+            </button>
+          </div>
+        </div>
+        
+        <button class="w-full py-3 bg-red-500 text-white rounded-lg font-medium">
+          退出登录
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 确认删除对话框 -->
+  <div id="delete-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+    <div class="bg-dark-200 rounded-lg p-6 w-5/6 max-w-md">
+      <h3 class="text-xl font-bold text-light-100 mb-4">确认删除</h3>
+      <p class="text-light-200 mb-6">您确定要删除这个联系人吗？此操作无法撤销。</p>
+      <div class="flex space-x-4">
+        <button id="cancel-delete" class="btn flex-1 py-3 bg-dark-100 text-light-100 rounded-lg font-medium">
+          取消
+        </button>
+        <button id="confirm-delete" class="btn flex-1 py-3 bg-red-500 text-white rounded-lg font-medium">
+          删除
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 添加分类对话框 -->
+  <div id="add-category-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+    <div class="bg-dark-200 rounded-lg p-6 w-5/6 max-w-md">
+      <h3 class="text-xl font-bold text-light-100 mb-4">添加分类</h3>
+      <div class="mb-6">
+        <label class="block text-light-200 mb-2">分类名称</label>
+        <input type="text" id="new-category-name" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+      </div>
+      <div class="flex space-x-4">
+        <button id="cancel-add-category" class="btn flex-1 py-3 bg-dark-100 text-light-100 rounded-lg font-medium">
+          取消
+        </button>
+        <button id="confirm-add-category" class="btn flex-1 py-3 bg-primary text-white rounded-lg font-medium">
+          添加
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // 数据存储
+    let contacts = JSON.parse(localStorage.getItem('businessContacts')) || [];
+    let currentContactId = null;
+    let currentAvatar = null;
+    let currentEditAvatar = null;
+    
+    // 富文本编辑器实例
+    let companyIntroEditor = null;
+    let editCompanyIntroEditor = null;
+    
+    // 云同步相关
+    let syncEnabled = localStorage.getItem('syncEnabled') === 'true' || true;
+    let lastSyncTime = localStorage.getItem('lastSyncTime') || '从未';
+    let syncInProgress = false;
+    
+    // DOM 加载完成后执行
+    document.addEventListener('DOMContentLoaded', function() {
+      // 初始化页面
+      renderContacts();
+      renderFavorites();
+      
+      // 初始化富文本编辑器
+      initRichTextEditors();
+      
+      // 初始化头像上传功能
+      initAvatarUpload();
+      
+      // 初始化云同步功能
+      initCloudSync();
+      
+      // 页面导航
+      setupNavigation();
+      
+      // 搜索功能
+      setupSearch();
+      
+      // 添加联系人
+      setupAddContact();
+      
+      // 联系人详情
+      setupContactDetail();
+      
+      // 编辑联系人
+      setupEditContact();
+      
+      // 删除联系人
+      setupDeleteContact();
+      
+      // 分类管理
+      setupCategories();
+      
+      // 其他功能
+      setupOtherFunctions();
+    });
+    
+    // 初始化联系人列表
+    function renderContacts(filter = '') {
+      const contactsList = document.getElementById('contacts-list');
+      const emptyState = document.getElementById('empty-state');
+      
+      // 过滤联系人
+      let filteredContacts = contacts;
+      if (filter) {
+        filteredContacts = contacts.filter(contact => 
+          contact.name.toLowerCase().includes(filter.toLowerCase()) || 
+          contact.company.toLowerCase().includes(filter.toLowerCase()) ||
+          contact.position.toLowerCase().includes(filter.toLowerCase())
+        );
+      }
+      
+      // 清空列表
+      contactsList.innerHTML = '';
+      
+      // 显示空状态或联系人列表
+      if (filteredContacts.length === 0) {
+        emptyState.classList.remove('hidden');
+        contactsList.appendChild(emptyState);
+      } else {
+        emptyState.classList.add('hidden');
+        
+        // 添加联系人卡片
+        filteredContacts.forEach(contact => {
+          const contactCard = createContactCard(contact);
+          contactsList.appendChild(contactCard);
+        });
+      }
+    }
+    
+    // 初始化重要联系人列表
+    function renderFavorites() {
+      const favoritesList = document.getElementById('favorites-list');
+      const emptyState = document.getElementById('favorites-empty-state');
+      
+      // 过滤重要联系人
+      const favoriteContacts = contacts.filter(contact => contact.favorite);
+      
+      // 清空列表
+      favoritesList.innerHTML = '';
+      
+      // 显示空状态或联系人列表
+      if (favoriteContacts.length === 0) {
+        emptyState.classList.remove('hidden');
+        favoritesList.appendChild(emptyState);
+      } else {
+        emptyState.classList.add('hidden');
+        
+        // 添加联系人卡片
+        favoriteContacts.forEach(contact => {
+          const contactCard = createContactCard(contact);
+          favoritesList.appendChild(contactCard);
+        });
+      }
+    }
+    
+    // 创建联系人卡片
+    function createContactCard(contact) {
+      const card = document.createElement('div');
+      card.className = 'contact-card bg-dark-100 rounded-lg p-4 mb-4';
+      card.dataset.id = contact.id;
+      
+      // 获取姓名首字母
+      const initials = contact.name.charAt(0).toUpperCase();
+      
+      // 设置卡片内容
+      card.innerHTML = `
+        <div class="flex items-center">
+          <div class="w-12 h-12 rounded-full overflow-hidden mr-4">
+            ${contact.avatar ? 
+              `<img src="${contact.avatar}" alt="${contact.name}" class="w-full h-full object-cover">` : 
+              `<div class="w-full h-full bg-primary/20 flex items-center justify-center">
+                <span class="text-xl font-bold text-primary">${initials}</span>
+              </div>`
+            }
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex justify-between items-start">
+              <h3 class="text-light-100 font-medium truncate">${contact.name}</h3>
+              ${contact.favorite ? '<i class="fa fa-star text-yellow-500"></i>' : ''}
+            </div>
+            <p class="text-light-300 text-sm truncate">${contact.company} • ${contact.position}</p>
+            <p class="text-light-300 text-xs mt-1">${contact.contact}</p>
+          </div>
+        </div>
+      `;
+      
+      // 添加点击事件
+      card.addEventListener('click', () => showContactDetail(contact.id));
+      
+      return card;
+    }
+    
+    // 设置页面导航
+    function setupNavigation() {
+      // 底部导航按钮
+      const navButtons = document.querySelectorAll('.nav-btn');
+      navButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetPage = btn.dataset.page;
+          
+          // 更新导航按钮样式
+          navButtons.forEach(b => {
+            b.classList.remove('text-primary');
+            b.classList.add('text-light-300');
+          });
+          btn.classList.remove('text-light-300');
+          btn.classList.add('text-primary');
+          
+          // 切换页面
+          showPage(targetPage);
+        });
+      });
+      
+      // 返回按钮
+      document.getElementById('back-from-add').addEventListener('click', () => showPage('home-page'));
+      document.getElementById('back-from-detail').addEventListener('click', () => showPage('home-page'));
+      document.getElementById('back-from-edit').addEventListener('click', () => showContactDetail(currentContactId));
+      
+      // 添加联系人按钮
+      document.getElementById('add-contact-btn').addEventListener('click', () => showPage('add-contact-page'));
+      document.getElementById('empty-add-btn').addEventListener('click', () => showPage('add-contact-page'));
+      
+      // 编辑联系人按钮
+      document.getElementById('edit-contact-btn').addEventListener('click', () => {
+        showPage('edit-contact-page');
+        loadContactForEdit(currentContactId);
+      });
+    }
+    
+    // 切换页面
+    function showPage(pageId) {
+      const pages = document.querySelectorAll('.page');
+      pages.forEach(page => {
+        page.classList.remove('active');
+      });
+      
+      const targetPage = document.getElementById(pageId);
+      if (targetPage) {
+        targetPage.classList.add('active');
+      }
+      
+      // 如果切换到首页或重要联系人页，重新渲染列表
+      if (pageId === 'home-page') {
+        renderContacts();
+      } else if (pageId === 'favorites-page') {
+        renderFavorites();
+      }
+      
+      // 隐藏搜索框
+      document.getElementById('search-container').classList.add('hidden');
+      document.getElementById('search-results').classList.remove('active');
+    }
+    
+    // 设置搜索功能
+    function setupSearch() {
+      const searchBtn = document.getElementById('search-btn');
+      const favSearchBtn = document.getElementById('fav-search-btn');
+      const searchContainer = document.getElementById('search-container');
+      const searchInput = document.getElementById('search-input');
+      const closeSearch = document.getElementById('close-search');
+      const searchResults = document.getElementById('search-results');
+      
+      // 打开搜索框
+      searchBtn.addEventListener('click', () => {
+        searchContainer.classList.toggle('hidden');
+        if (!searchContainer.classList.contains('hidden')) {
+          searchInput.focus();
+        }
+      });
+      
+      favSearchBtn.addEventListener('click', () => {
+        searchContainer.classList.toggle('hidden');
+        if (!searchContainer.classList.contains('hidden')) {
+          searchInput.focus();
+        }
+      });
+      
+      // 关闭搜索框
+      closeSearch.addEventListener('click', () => {
+        searchContainer.classList.add('hidden');
+        searchResults.classList.remove('active');
+        searchInput.value = '';
+        renderContacts();
+      });
+      
+      // 搜索输入
+      searchInput.addEventListener('input', () => {
+        const query = searchInput.value.trim();
+        
+        if (query.length > 0) {
+          // 过滤联系人
+          const results = contacts.filter(contact => 
+            contact.name.toLowerCase().includes(query.toLowerCase()) || 
+            contact.company.toLowerCase().includes(query.toLowerCase()) ||
+            contact.position.toLowerCase().includes(query.toLowerCase())
+          );
+          
+          // 显示搜索结果
+          searchResults.innerHTML = '';
+          if (results.length > 0) {
+            results.forEach(contact => {
+              const resultItem = document.createElement('div');
+              resultItem.className = 'p-3 hover:bg-dark-200 cursor-pointer';
+              resultItem.dataset.id = contact.id;
+              
+              resultItem.innerHTML = `
+                <div class="flex items-center">
+                  <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center mr-3">
+                    <span class="text-sm font-bold text-primary">${contact.name.charAt(0).toUpperCase()}</span>
+                  </div>
+                  <div>
+                    <h4 class="text-light-100 text-sm">${contact.name}</h4>
+                    <p class="text-light-300 text-xs">${contact.company} • ${contact.position}</p>
+                  </div>
+                </div>
+              `;
+              
+              resultItem.addEventListener('click', () => {
+                showContactDetail(contact.id);
+                searchContainer.classList.add('hidden');
+                searchResults.classList.remove('active');
+                searchInput.value = '';
+              });
+              
+              searchResults.appendChild(resultItem);
+            });
+            
+            searchResults.classList.add('active');
+          } else {
+            searchResults.innerHTML = `
+              <div class="p-4 text-center">
+                <p class="text-light-300">没有找到匹配的联系人</p>
+              </div>
+            `;
+            searchResults.classList.add('active');
+          }
+        } else {
+          searchResults.classList.remove('active');
+          renderContacts();
+        }
+      });
+    }
+    
+    // 设置添加联系人功能
+    function setupAddContact() {
+      const addContactForm = document.getElementById('add-contact-form');
+      const saveContactBtn = document.getElementById('save-contact-btn');
+      
+      saveContactBtn.addEventListener('click', () => {
+        if (addContactForm.checkValidity()) {
+          // 获取表单数据
+          const newContact = {
+            id: Date.now().toString(),
+            name: document.getElementById('name').value,
+            company: document.getElementById('company').value,
+            position: document.getElementById('position').value,
+            contact: document.getElementById('contact').value,
+            companyIntro: companyIntroEditor.getContents(), // 获取富文本内容
+            occasion: document.getElementById('occasion').value,
+            category: document.getElementById('category').value,
+            favorite: document.getElementById('favorite').checked,
+            avatar: currentAvatar || null, // 获取头像
+            dateAdded: new Date().toISOString().split('T')[0]
+          };
+          
+          // 添加到联系人列表
+          contacts.push(newContact);
+          
+          // 保存到本地存储
+          saveContacts();
+          
+          // 如果启用了云同步，触发同步
+          if (syncEnabled) {
+            syncContacts();
+          }
+          
+          // 重新渲染列表
+          renderContacts();
+          renderFavorites();
+          
+          // 重置表单
+          addContactForm.reset();
+          companyIntroEditor.setText('');
+          document.getElementById('avatar-preview').src = 'https://p3-doubao-search-sign.byteimg.com/pgc-image/6323b43dac9b41db978bffd8c580ac63~tplv-be4g95zd3a-image.jpeg?rk3s=542c0f93&x-expires=1778901982&x-signature=Z6canz3kyNW8eqE0srakLjLxx80%3D';
+          currentAvatar = null;
+          
+          // 返回首页
+          showPage('home-page');
+          
+          // 显示成功提示
+          showToast('联系人添加成功');
+        } else {
+          // 显示表单验证错误
+          addContactForm.reportValidity();
+        }
+      });
+    }
+    
+    // 设置联系人详情功能
+    function setupContactDetail() {
+      // 拨打电话按钮
+      document.getElementById('call-btn').addEventListener('click', () => {
+        const contact = getContactById(currentContactId);
+        if (contact) {
+          showToast(`正在拨打 ${contact.contact}`);
+        }
+      });
+      
+      // 发送消息按钮
+      document.getElementById('message-btn').addEventListener('click', () => {
+        const contact = getContactById(currentContactId);
+        if (contact) {
+          showToast(`正在发送消息给 ${contact.name}`);
+        }
+      });
+    }
+    
+    // 显示联系人详情
+    function showContactDetail(contactId) {
+      currentContactId = contactId;
+      const contact = getContactById(contactId);
+      
+      if (contact) {
+        // 填充详情页面
+        document.getElementById('detail-avatar').src = contact.avatar || 'https://p3-doubao-search-sign.byteimg.com/pgc-image/6323b43dac9b41db978bffd8c580ac63~tplv-be4g95zd3a-image.jpeg?rk3s=542c0f93&x-expires=1778901982&x-signature=Z6canz3kyNW8eqE0srakLjLxx80%3D';
+        document.getElementById('detail-initials').textContent = contact.name.charAt(0).toUpperCase();
+        document.getElementById('detail-name').textContent = contact.name;
+        document.getElementById('detail-company').textContent = contact.company;
+        document.getElementById('detail-position').textContent = contact.position;
+        document.getElementById('detail-contact').textContent = contact.contact;
+        
+        // 显示富文本内容
+        const companyIntroContainer = document.getElementById('detail-company-intro');
+        if (contact.companyIntro && typeof contact.companyIntro === 'object') {
+          // 如果是Delta格式，使用innerHTML
+          companyIntroContainer.innerHTML = '';
+          
+          // 创建临时编辑器
+          const tempEditor = document.createElement('div');
+          tempEditor.style.display = 'none';
+          document.body.appendChild(tempEditor);
+          
+          const quillTemp = new Quill(tempEditor, {
+            theme: 'snow',
+            modules: { toolbar: false }
+          });
+          
+          quillTemp.setContents(contact.companyIntro);
+          companyIntroContainer.innerHTML = quillTemp.root.innerHTML;
+          
+          document.body.removeChild(tempEditor);
+        } else {
+          // 如果是纯文本，直接显示
+          companyIntroContainer.innerHTML = `<p>${contact.companyIntro || '无'}</p>`;
+        }
+        
+        document.getElementById('detail-occasion').textContent = contact.occasion || '无';
+        document.getElementById('detail-date').textContent = contact.dateAdded;
+        
+        // 设置分类标签
+        const categoryBadge = document.getElementById('detail-category');
+        categoryBadge.textContent = getCategoryName(contact.category);
+        
+        // 设置标签样式
+        categoryBadge.className = 'badge mt-3';
+        switch (contact.category) {
+          case 'important':
+            categoryBadge.classList.add('bg-primary/20', 'text-primary');
+            break;
+          case 'partner':
+            categoryBadge.classList.add('bg-secondary/20', 'text-secondary');
+            break;
+          case 'supplier':
+            categoryBadge.classList.add('bg-purple-500/20', 'text-purple-500');
+            break;
+          case 'customer':
+            categoryBadge.classList.add('bg-orange-500/20', 'text-orange-500');
+            break;
+          default:
+            categoryBadge.classList.add('bg-dark-300', 'text-light-200');
+        }
+        
+        // 显示详情页面
+        showPage('contact-detail-page');
+      }
+    }
+    
+    // 设置编辑联系人功能
+    function setupEditContact() {
+      const editContactForm = document.getElementById('edit-contact-form');
+      const updateContactBtn = document.getElementById('update-contact-btn');
+      
+      updateContactBtn.addEventListener('click', () => {
+        if (editContactForm.checkValidity()) {
+          // 获取表单数据
+          const contactId = document.getElementById('edit-id').value;
+          const contactIndex = contacts.findIndex(c => c.id === contactId);
+          
+          if (contactIndex !== -1) {
+            // 更新联系人信息
+            contacts[contactIndex] = {
+              ...contacts[contactIndex],
+              name: document.getElementById('edit-name').value,
+              company: document.getElementById('edit-company').value,
+              position: document.getElementById('edit-position').value,
+              contact: document.getElementById('edit-contact').value,
+              companyIntro: editCompanyIntroEditor.getContents(), // 获取富文本内容
+              occasion: document.getElementById('edit-occasion').value,
+              category: document.getElementById('edit-category').value,
+              favorite: document.getElementById('edit-favorite').checked,
+              avatar: currentEditAvatar || contacts[contactIndex].avatar // 更新头像
+            };
+            
+            // 保存到本地存储
+            saveContacts();
+            
+            // 如果启用了云同步，触发同步
+            if (syncEnabled) {
+              syncContacts();
+            }
+            
+            // 重新渲染列表
+            renderContacts();
+            renderFavorites();
+            
+            // 返回详情页
+            showContactDetail(contactId);
+            
+            // 显示成功提示
+            showToast('联系人更新成功');
+          }
+        } else {
+          // 显示表单验证错误
+          editContactForm.reportValidity();
+        }
+      });
+    }
+    
+    // 加载联系人数据到编辑表单
+    function loadContactForEdit(contactId) {
+      const contact = getContactById(contactId);
+      
+      if (contact) {
+        // 填充编辑表单
+        document.getElementById('edit-id').value = contact.id;
+        document.getElementById('edit-avatar').value = contact.avatar || '';
+        document.getElementById('edit-avatar-preview').src = contact.avatar || 'https://p3-doubao-search-sign.byteimg.com/pgc-image/6323b43dac9b41db978bffd8c580ac63~tplv-be4g95zd3a-image.jpeg?rk3s=542c0f93&x-expires=1778901982&x-signature=Z6canz3kyNW8eqE0srakLjLxx80%3D';
+        currentEditAvatar = contact.avatar;
+        
+        document.getElementById('edit-name').value = contact.name;
+        document.getElementById('edit-company').value = contact.company;
+        document.getElementById('edit-position').value = contact.position;
+        document.getElementById('edit-contact').value = contact.contact;
+        
+        // 加载富文本内容
+        if (contact.companyIntro && typeof contact.companyIntro === 'object') {
+          editCompanyIntroEditor.setContents(contact.companyIntro);
+        } else {
+          editCompanyIntroEditor.setText(contact.companyIntro || '');
+        }
+        
+        document.getElementById('edit-occasion').value = contact.occasion || '';
+        document.getElementById('edit-category').value = contact.category;
+        document.getElementById('edit-favorite').checked = contact.favorite;
+      }
+    }
+    
+    // 设置删除联系人功能
+    function setupDeleteContact() {
+      const deleteContactBtn = document.getElementById('delete-contact-btn');
+      const deleteModal = document.getElementById('delete-modal');
+      const cancelDelete = document.getElementById('cancel-delete');
+      const confirmDelete = document.getElementById('confirm-delete');
+      
+      // 打开删除对话框
+      deleteContactBtn.addEventListener('click', () => {
+        deleteModal.classList.remove('hidden');
+      });
+      
+      // 取消删除
+      cancelDelete.addEventListener('click', () => {
+        deleteModal.classList.add('hidden');
+      });
+      
+      // 确认删除
+      confirmDelete.addEventListener('click', () => {
+        const contactIndex = contacts.findIndex(c => c.id === currentContactId);
+        
+        if (contactIndex !== -1) {
+          // 删除联系人
+          contacts.splice(contactIndex, 1);
+          
+          // 保存到本地存储
+          saveContacts();
+          
+          // 重新渲染列表
+          renderContacts();
+          renderFavorites();
+          
+          // 关闭对话框
+          deleteModal.classList.add('hidden');
+          
+          // 返回首页
+          showPage('home-page');
+          
+          // 显示成功提示
+          showToast('联系人删除成功');
+        }
+      });
+    }
+    
+    // 设置分类管理功能
+    function setupCategories() {
+      const addCategoryBtn = document.getElementById('add-category-btn');
+      const addCategoryModal = document.getElementById('add-category-modal');
+      const cancelAddCategory = document.getElementById('cancel-add-category');
+      const confirmAddCategory = document.getElementById('confirm-add-category');
+      
+      // 打开添加分类对话框
+      addCategoryBtn.addEventListener('click', () => {
+        addCategoryModal.classList.remove('hidden');
+      });
+      
+      // 取消添加分类
+      cancelAddCategory.addEventListener('click', () => {
+        addCategoryModal.classList.add('hidden');
+        document.getElementById('new-category-name').value = '';
+      });
+      
+      // 确认添加分类
+      confirmAddCategory.addEventListener('click', () => {
+        const categoryName = document.getElementById('new-category-name').value.trim();
+        
+        if (categoryName) {
+          // 这里可以添加自定义分类的逻辑
+          showToast(`分类 "${categoryName}" 添加成功`);
+          
+          // 关闭对话框
+          addCategoryModal.classList.add('hidden');
+          document.getElementById('new-category-name').value = '';
+        }
+      });
+    }
+    
+    // 设置其他功能
+    function setupOtherFunctions() {
+      // 分类按钮点击事件
+      const categoryBtns = document.querySelectorAll('.category-btn');
+      categoryBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          // 更新按钮样式
+          categoryBtns.forEach(b => {
+            b.classList.remove('bg-primary', 'text-white');
+            b.classList.add('bg-dark-100', 'text-light-200');
+          });
+          btn.classList.remove('bg-dark-100', 'text-light-200');
+          btn.classList.add('bg-primary', 'text-white');
+          
+          // 过滤联系人
+          const category = btn.textContent.trim();
+          if (category === '全部') {
+            renderContacts();
+          } else {
+            // 这里可以添加按分类过滤的逻辑
+            renderContacts();
+          }
+        });
+      });
+      
+      // 排序按钮点击事件
+      document.getElementById('sort-btn').addEventListener('click', () => {
+        // 按姓名排序
+        contacts.sort((a, b) => a.name.localeCompare(b.name));
+        
+        // 保存到本地存储
+        saveContacts();
+        
+        // 重新渲染列表
+        renderContacts();
+        
+        // 显示成功提示
+        showToast('联系人已按姓名排序');
+      });
+      
+      // 过滤按钮点击事件
+      document.getElementById('filter-btn').addEventListener('click', () => {
+        showToast('过滤功能即将上线');
+      });
+    }
+    
+    // 辅助函数：保存联系人到本地存储
+    function saveContacts() {
+      localStorage.setItem('businessContacts', JSON.stringify(contacts));
+    }
+    
+    // 辅助函数：根据ID获取联系人
+    function getContactById(id) {
+      return contacts.find(contact => contact.id === id);
+    }
+    
+    // 辅助函数：获取分类名称
+    function getCategoryName(categoryValue) {
+      const categories = {
+        'all': '未分类',
+        'important': '重要',
+        'partner': '合作伙伴',
+        'supplier': '供应商',
+        'customer': '客户'
+      };
+      
+      return categories[categoryValue] || categoryValue;
+    }
+    
+    // 初始化富文本编辑器
+    function initRichTextEditors() {
+      // 添加联系人页面的编辑器
+      const companyIntroContainer = document.getElementById('company-intro-editor');
+      if (companyIntroContainer) {
+        companyIntroEditor = new Quill(companyIntroContainer, {
+          theme: 'snow',
+          modules: {
+            toolbar: [
+              ['bold', 'italic', 'underline', 'strike'],
+              [{ 'header': [1, 2, 3, false] }],
+              [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+              ['link', 'image'],
+              [{ 'align': [] }],
+              ['clean']
+            ]
+          },
+          placeholder: '请输入公司简介...'
+        });
+        
+        // 自定义图片上传
+        companyIntroEditor.getModule('toolbar').addHandler('image', function() {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/*';
+          
+          input.onchange = function() {
+            const file = input.files[0];
+            if (file) {
+              compressImage(file, function(compressedDataUrl) {
+                const range = companyIntroEditor.getSelection();
+                companyIntroEditor.insertEmbed(range.index, 'image', compressedDataUrl);
+              });
+            }
+          };
+          
+          input.click();
+        });
+      }
+      
+      // 编辑联系人页面的编辑器
+      const editCompanyIntroContainer = document.getElementById('edit-company-intro-editor');
+      if (editCompanyIntroContainer) {
+        editCompanyIntroEditor = new Quill(editCompanyIntroContainer, {
+          theme: 'snow',
+          modules: {
+            toolbar: [
+              ['bold', 'italic', 'underline', 'strike'],
+              [{ 'header': [1, 2, 3, false] }],
+              [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+              ['link', 'image'],
+              [{ 'align': [] }],
+              ['clean']
+            ]
+          },
+          placeholder: '请输入公司简介...'
+        });
+        
+        // 自定义图片上传
+        editCompanyIntroEditor.getModule('toolbar').addHandler('image', function() {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/*';
+          
+          input.onchange = function() {
+            const file = input.files[0];
+            if (file) {
+              compressImage(file, function(compressedDataUrl) {
+                const range = editCompanyIntroEditor.getSelection();
+                editCompanyIntroEditor.insertEmbed(range.index, 'image', compressedDataUrl);
+              });
+            }
+          };
+          
+          input.click();
+        });
+      }
+    }
+    
+    // 初始化头像上传功能
+    function initAvatarUpload() {
+      // 添加联系人页面的头像上传
+      const avatarInput = document.getElementById('avatar-input');
+      const avatarPreview = document.getElementById('avatar-preview');
+      
+      if (avatarInput && avatarPreview) {
+        avatarInput.addEventListener('change', function() {
+          const file = this.files[0];
+          if (file) {
+            compressImage(file, function(compressedDataUrl) {
+              avatarPreview.src = compressedDataUrl;
+              currentAvatar = compressedDataUrl;
+            });
+          }
+        });
+      }
+      
+      // 编辑联系人页面的头像上传
+      const editAvatarInput = document.getElementById('edit-avatar-input');
+      const editAvatarPreview = document.getElementById('edit-avatar-preview');
+      
+      if (editAvatarInput && editAvatarPreview) {
+        editAvatarInput.addEventListener('change', function() {
+          const file = this.files[0];
+          if (file) {
+            compressImage(file, function(compressedDataUrl) {
+              editAvatarPreview.src = compressedDataUrl;
+              currentEditAvatar = compressedDataUrl;
+            });
+          }
+        });
+      }
+    }
+    
+    // 图片压缩函数
+    function compressImage(file, callback) {
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        const img = new Image();
+        
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // 设置最大宽度和高度
+          const maxWidth = 800;
+          const maxHeight = 800;
+          
+          // 计算缩放比例
+          if (width > height) {
+            if (width > maxWidth) {
+              height = height * (maxWidth / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = width * (maxHeight / height);
+              height = maxHeight;
+            }
+          }
+          
+          // 设置canvas尺寸
+          canvas.width = width;
+          canvas.height = height;
+          
+          // 绘制图片
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // 获取压缩后的图片数据
+          const quality = 0.7; // 压缩质量
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          
+          // 调用回调函数
+          callback(dataUrl);
+        };
+        
+        img.src = e.target.result;
+      };
+      
+      reader.readAsDataURL(file);
+    }
+    
+    // 初始化云同步功能
+    function initCloudSync() {
+      // 初始化Mock Service Worker
+      if (typeof worker !== 'undefined') {
+        worker.start();
+      }
+      
+      // 更新同步状态显示
+      updateSyncStatus();
+      
+      // 同步开关切换
+      const syncToggle = document.getElementById('sync-toggle');
+      if (syncToggle) {
+        syncToggle.checked = syncEnabled;
+        
+        syncToggle.addEventListener('change', function() {
+          syncEnabled = this.checked;
+          localStorage.setItem('syncEnabled', syncEnabled);
+          
+          if (syncEnabled) {
+            syncContacts();
+          }
+          
+          updateSyncStatus();
+        });
+      }
+      
+      // 立即同步按钮
+      const syncNowBtn = document.getElementById('sync-now-btn');
+      if (syncNowBtn) {
+        syncNowBtn.addEventListener('click', function() {
+          if (!syncInProgress) {
+            syncContacts();
+          }
+        });
+      }
+      
+      // 共享联系人按钮
+      const shareContactsBtn = document.getElementById('share-contacts-btn');
+      if (shareContactsBtn) {
+        shareContactsBtn.addEventListener('click', function() {
+          showShareModal();
+        });
+      }
+      
+      // 与我共享按钮
+      const sharedWithMeBtn = document.getElementById('shared-with-me-btn');
+      if (sharedWithMeBtn) {
+        sharedWithMeBtn.addEventListener('click', function() {
+          showSharedWithMePage();
+        });
+      }
+      
+      // 设置定时同步
+      if (syncEnabled) {
+        setupPeriodicSync();
+      }
+    }
+    
+    // 更新同步状态显示
+    function updateSyncStatus() {
+      const syncStatus = document.getElementById('sync-status');
+      const lastSyncTimeEl = document.getElementById('last-sync-time');
+      
+      if (syncStatus && lastSyncTimeEl) {
+        lastSyncTimeEl.textContent = lastSyncTime;
+        
+        if (syncEnabled) {
+          syncStatus.classList.remove('offline');
+          syncStatus.classList.add('online');
+          syncStatus.innerHTML = '<i class="fa fa-refresh sync-icon"></i><span>已同步</span>';
+        } else {
+          syncStatus.classList.remove('online');
+          syncStatus.classList.add('offline');
+          syncStatus.innerHTML = '<i class="fa fa-refresh sync-icon"></i><span>未同步</span>';
+        }
+      }
+    }
+    
+    // 同步联系人数据
+    function syncContacts() {
+      if (syncInProgress) return;
+      
+      syncInProgress = true;
+      
+      // 更新同步状态
+      const syncStatus = document.getElementById('sync-status');
+      if (syncStatus) {
+        syncStatus.innerHTML = '<i class="fa fa-refresh sync-icon"></i><span>同步中...</span>';
+      }
+      
+      // 模拟API请求延迟
+      setTimeout(() => {
+        // 模拟API响应
+        const mockResponse = {
+          success: true,
+          data: contacts,
+          timestamp: new Date().toISOString()
+        };
+        
+        // 更新最后同步时间
+        lastSyncTime = new Date().toLocaleString();
+        localStorage.setItem('lastSyncTime', lastSyncTime);
+        
+        // 保存到本地存储
+        saveContacts();
+        
+        // 更新同步状态
+        updateSyncStatus();
+        
+        // 显示同步成功提示
+        showToast('同步成功');
+        
+        syncInProgress = false;
+      }, 1500);
+    }
+    
+    // 设置定时同步
+    function setupPeriodicSync() {
+      // 每30分钟同步一次
+      const syncInterval = 30 * 60 * 1000;
+      
+      setInterval(() => {
+        if (syncEnabled && !syncInProgress) {
+          syncContacts();
+        }
+      }, syncInterval);
+    }
+    
+    // 显示共享联系人模态框
+    function showShareModal() {
+      // 创建模态框
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center';
+      
+      // 模态框内容
+      modal.innerHTML = `
+        <div class="bg-dark-200 rounded-lg p-6 w-5/6 max-w-md">
+          <h3 class="text-xl font-bold text-light-100 mb-4">共享联系人</h3>
+          
+          <div class="mb-6">
+            <label class="block text-light-200 mb-2">选择联系人</label>
+            <select id="share-contact-select" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+              ${contacts.map(contact => `<option value="${contact.id}">${contact.name} - ${contact.company}</option>`).join('')}
+            </select>
+          </div>
+          
+          <div class="mb-6">
+            <label class="block text-light-200 mb-2">输入邮箱</label>
+            <input type="email" id="share-email" placeholder="请输入共享对象的邮箱" class="input-field w-full py-3 px-4 rounded-lg text-light-100">
+          </div>
+          
+          <div class="flex space-x-4">
+            <button id="cancel-share" class="btn flex-1 py-3 bg-dark-100 text-light-100 rounded-lg font-medium">
+              取消
+            </button>
+            <button id="confirm-share" class="btn flex-1 py-3 bg-primary text-white rounded-lg font-medium">
+              共享
+            </button>
+          </div>
+        </div>
+      `;
+      
+      // 添加到页面
+      document.body.appendChild(modal);
+      
+      // 取消按钮事件
+      document.getElementById('cancel-share').addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+      
+      // 确认按钮事件
+      document.getElementById('confirm-share').addEventListener('click', () => {
+        const contactId = document.getElementById('share-contact-select').value;
+        const email = document.getElementById('share-email').value;
+        
+        if (email) {
+          // 模拟共享API请求
+          setTimeout(() => {
+            document.body.removeChild(modal);
+            showToast('联系人共享成功');
+          }, 1000);
+        } else {
+          showToast('请输入邮箱地址');
+        }
+      });
+    }
+    
+    // 显示与我共享页面
+    function showSharedWithMePage() {
+      // 创建页面
+      const page = document.createElement('div');
+      page.className = 'fixed inset-0 bg-dark-300 z-50 p-4';
+      
+      // 页面内容
+      page.innerHTML = `
+        <div class="flex justify-between items-center py-4 border-b border-dark-100 mb-6">
+          <button id="back-from-shared" class="btn p-2 rounded-full hover:bg-dark-100">
+            <i class="fa fa-arrow-left text-light-200"></i>
+          </button>
+          <h2 class="text-xl font-bold text-white">与我共享</h2>
+          <div class="w-10"></div> <!-- 占位 -->
+        </div>
+        
+        <div class="space-y-4">
+          <div class="bg-dark-100 rounded-lg p-4">
+            <div class="flex items-center">
+              <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center mr-3">
+                <span class="text-sm font-bold text-primary">LW</span>
+              </div>
+              <div class="flex-1">
+                <h3 class="text-light-100 font-medium">李伟 - 腾讯科技</h3>
+                <p class="text-light-300 text-xs">共享者: 张三</p>
+              </div>
+              <button class="btn p-2 rounded-full hover:bg-dark-200">
+                <i class="fa fa-plus text-light-200"></i>
+              </button>
+            </div>
+          </div>
+          
+          <div class="bg-dark-100 rounded-lg p-4">
+            <div class="flex items-center">
+              <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center mr-3">
+                <span class="text-sm font-bold text-primary">WJ</span>
+              </div>
+              <div class="flex-1">
+                <h3 class="text-light-100 font-medium">王佳 - 阿里巴巴</h3>
+                <p class="text-light-300 text-xs">共享者: 李四</p>
+              </div>
+              <button class="btn p-2 rounded-full hover:bg-dark-200">
+                <i class="fa fa-plus text-light-200"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // 添加到页面
+      document.body.appendChild(page);
+      
+      // 返回按钮事件
+      document.getElementById('back-from-shared').addEventListener('click', () => {
+        document.body.removeChild(page);
+      });
+    }
+    
+    // 辅助函数：显示提示消息
+    function showToast(message) {
+      // 创建提示元素
+      const toast = document.createElement('div');
+      toast.className = 'fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-dark-100 text-light-100 px-4 py-2 rounded-lg shadow-lg z-50';
+      toast.textContent = message;
+      
+      // 添加到页面
+      document.body.appendChild(toast);
+      
+      // 2秒后移除
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+        setTimeout(() => {
+          document.body.removeChild(toast);
+        }, 300);
+      }, 2000);
+    }
+  </script>
+</body>
+</html>
