@@ -864,6 +864,16 @@
               <span class="text-light-200">最后同步</span>
               <span id="last-sync-time" class="text-light-300">从未</span>
             </div>
+            <div class="p-3">
+              <div class="mb-2">
+                <span class="text-light-200 text-sm">API地址</span>
+                <p class="text-light-300 text-xs mt-1">配置后端服务器地址</p>
+              </div>
+              <div class="flex space-x-2">
+                <input type="text" id="api-url-input" class="input-field flex-1 py-2 px-3 rounded-lg text-light-100" placeholder="http://localhost:3000/api">
+                <button id="save-api-url-btn" class="btn px-3 py-2 bg-primary text-white rounded-lg font-medium">保存</button>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -995,9 +1005,356 @@
     let syncEnabled = localStorage.getItem('syncEnabled') === 'true' || true;
     let lastSyncTime = localStorage.getItem('lastSyncTime') || '从未';
     let syncInProgress = false;
+    // 云同步相关常量
+    const API_BASE_URL = localStorage.getItem('apiBaseUrl') || 'http://localhost:3000/api';
+    
+    // 用户认证相关
+    const USER_TOKEN = 'userToken';
+    const USER_INFO = 'userInfo';
+    
+    // 获取当前用户
+    function getCurrentUser() {
+      const userJson = localStorage.getItem(USER_INFO);
+      return userJson ? JSON.parse(userJson) : null;
+    }
+    
+    // 检查是否已登录
+    function isLoggedIn() {
+      return !!localStorage.getItem(USER_TOKEN);
+    }
+    
+    // 保存登录信息
+    function saveLoginInfo(token, user) {
+      localStorage.setItem(USER_TOKEN, token);
+      localStorage.setItem(USER_INFO, JSON.stringify(user));
+    }
+    
+    // 登出
+    function logout() {
+      localStorage.removeItem(USER_TOKEN);
+      localStorage.removeItem(USER_INFO);
+      showLoginForm();
+    }
+    
+    // 注册用户
+    async function register(username, password) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          saveLoginInfo(data.token, data.user);
+          return { success: true };
+        } else {
+          return { success: false, message: data.message || '注册失败' };
+        }
+      } catch (error) {
+        console.error('注册错误:', error);
+        return { success: false, message: '网络错误，请检查API地址设置' };
+      }
+    }
+    
+    // 用户登录
+    async function login(username, password) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          saveLoginInfo(data.token, data.user);
+          return { success: true };
+        } else {
+          return { success: false, message: data.message || '登录失败' };
+        }
+      } catch (error) {
+        console.error('登录错误:', error);
+        return { success: false, message: '网络错误，请检查API地址设置' };
+      }
+    }
+    
+    // 显示登录表单
+    function showLoginForm() {
+      const appContent = document.getElementById('app-content');
+      appContent.innerHTML = `
+        <div class="auth-container">
+          <h2>联系人管理系统</h2>
+          <div id="auth-form" class="auth-form">
+            <div class="form-header">
+              <button id="login-tab" class="tab-btn active">登录</button>
+              <button id="register-tab" class="tab-btn">注册</button>
+            </div>
+            <form id="login-form" class="form">
+              <div class="form-group">
+                <label for="username">用户名</label>
+                <input type="text" id="username" required>
+              </div>
+              <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" required>
+              </div>
+              <button type="submit" class="btn-primary">登录</button>
+              <div id="error-message" class="error-message"></div>
+            </form>
+            <form id="register-form" class="form" style="display: none;">
+              <div class="form-group">
+                <label for="reg-username">用户名</label>
+                <input type="text" id="reg-username" required>
+              </div>
+              <div class="form-group">
+                <label for="reg-password">密码</label>
+                <input type="password" id="reg-password" required>
+              </div>
+              <button type="submit" class="btn-primary">注册</button>
+              <div id="reg-error-message" class="error-message"></div>
+            </form>
+            <div class="api-config">
+              <div class="form-group">
+                <label for="api-url">API地址:</label>
+                <input type="text" id="api-url" value="${API_BASE_URL}">
+                <button id="save-api-url" class="btn-small">保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // 添加事件监听
+      document.getElementById('login-tab').addEventListener('click', () => {
+        document.getElementById('login-tab').classList.add('active');
+        document.getElementById('register-tab').classList.remove('active');
+        document.getElementById('login-form').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+      });
+      
+      document.getElementById('register-tab').addEventListener('click', () => {
+        document.getElementById('register-tab').classList.add('active');
+        document.getElementById('login-tab').classList.remove('active');
+        document.getElementById('register-form').style.display = 'block';
+        document.getElementById('login-form').style.display = 'none';
+      });
+      
+      document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const result = await login(username, password);
+        if (result.success) {
+          initApp();
+        } else {
+          document.getElementById('error-message').textContent = result.message;
+        }
+      });
+      
+      document.getElementById('register-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('reg-username').value;
+        const password = document.getElementById('reg-password').value;
+        const result = await register(username, password);
+        if (result.success) {
+          initApp();
+        } else {
+          document.getElementById('reg-error-message').textContent = result.message;
+        }
+      });
+      
+      document.getElementById('save-api-url').addEventListener('click', () => {
+        const apiUrl = document.getElementById('api-url').value;
+        localStorage.setItem('apiBaseUrl', apiUrl);
+        alert('API地址已保存');
+      });
+    }
     
     // DOM 加载完成后执行
+    // 云同步相关常量
+    const API_BASE_URL = localStorage.getItem('apiBaseUrl') || 'http://localhost:3000/api';
+    
+    // 用户认证相关
+    const USER_TOKEN = 'userToken';
+    const USER_INFO = 'userInfo';
+    
+    // 获取当前用户
+    function getCurrentUser() {
+      const userJson = localStorage.getItem(USER_INFO);
+      return userJson ? JSON.parse(userJson) : null;
+    }
+    
+    // 检查是否已登录
+    function isLoggedIn() {
+      return !!localStorage.getItem(USER_TOKEN);
+    }
+    
+    // 保存登录信息
+    function saveLoginInfo(token, user) {
+      localStorage.setItem(USER_TOKEN, token);
+      localStorage.setItem(USER_INFO, JSON.stringify(user));
+    }
+    
+    // 登出
+    function logout() {
+      localStorage.removeItem(USER_TOKEN);
+      localStorage.removeItem(USER_INFO);
+      showLoginForm();
+    }
+    
+    // 注册用户
+    async function register(username, password) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          saveLoginInfo(data.token, data.user);
+          return { success: true };
+        } else {
+          return { success: false, message: data.message || '注册失败' };
+        }
+      } catch (error) {
+        console.error('注册错误:', error);
+        return { success: false, message: '网络错误，请检查API地址设置' };
+      }
+    }
+    
+    // 用户登录
+    async function login(username, password) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          saveLoginInfo(data.token, data.user);
+          return { success: true };
+        } else {
+          return { success: false, message: data.message || '登录失败' };
+        }
+      } catch (error) {
+        console.error('登录错误:', error);
+        return { success: false, message: '网络错误，请检查API地址设置' };
+      }
+    }
+    
+    // 显示登录表单
+    function showLoginForm() {
+      const appContent = document.getElementById('app-content');
+      appContent.innerHTML = `
+        <div class="auth-container">
+          <h2>联系人管理系统</h2>
+          <div id="auth-form" class="auth-form">
+            <div class="form-header">
+              <button id="login-tab" class="tab-btn active">登录</button>
+              <button id="register-tab" class="tab-btn">注册</button>
+            </div>
+            <form id="login-form" class="form">
+              <div class="form-group">
+                <label for="username">用户名</label>
+                <input type="text" id="username" required>
+              </div>
+              <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" required>
+              </div>
+              <button type="submit" class="btn-primary">登录</button>
+              <div id="error-message" class="error-message"></div>
+            </form>
+            <form id="register-form" class="form" style="display: none;">
+              <div class="form-group">
+                <label for="reg-username">用户名</label>
+                <input type="text" id="reg-username" required>
+              </div>
+              <div class="form-group">
+                <label for="reg-password">密码</label>
+                <input type="password" id="reg-password" required>
+              </div>
+              <button type="submit" class="btn-primary">注册</button>
+              <div id="reg-error-message" class="error-message"></div>
+            </form>
+            <div class="api-config">
+              <div class="form-group">
+                <label for="api-url">API地址:</label>
+                <input type="text" id="api-url" value="${API_BASE_URL}">
+                <button id="save-api-url" class="btn-small">保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // 添加事件监听
+      document.getElementById('login-tab').addEventListener('click', function() {
+        document.getElementById('login-tab').classList.add('active');
+        document.getElementById('register-tab').classList.remove('active');
+        document.getElementById('login-form').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+      });
+      
+      document.getElementById('register-tab').addEventListener('click', function() {
+        document.getElementById('register-tab').classList.add('active');
+        document.getElementById('login-tab').classList.remove('active');
+        document.getElementById('register-form').style.display = 'block';
+        document.getElementById('login-form').style.display = 'none';
+      });
+      
+      document.getElementById('login-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const result = await login(username, password);
+        if (result.success) {
+          window.location.reload(); // 重新加载页面以初始化应用
+        } else {
+          document.getElementById('error-message').textContent = result.message;
+        }
+      });
+      
+      document.getElementById('register-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const username = document.getElementById('reg-username').value;
+        const password = document.getElementById('reg-password').value;
+        const result = await register(username, password);
+        if (result.success) {
+          window.location.reload(); // 重新加载页面以初始化应用
+        } else {
+          document.getElementById('reg-error-message').textContent = result.message;
+        }
+      });
+      
+      document.getElementById('save-api-url').addEventListener('click', function() {
+        const apiUrl = document.getElementById('api-url').value;
+        localStorage.setItem('apiBaseUrl', apiUrl);
+        alert('API地址已保存');
+      });
+    }
+    
     document.addEventListener('DOMContentLoaded', function() {
+      // 检查登录状态
+      if (!isLoggedIn()) {
+        showLoginForm();
+        return;
+      }
+      
       // 初始化页面
       renderContacts();
       renderFavorites();
@@ -2098,13 +2455,41 @@
     
     // 初始化云同步功能
     function initCloudSync() {
-      // 初始化Mock Service Worker
-      if (typeof worker !== 'undefined') {
-        worker.start();
-      }
-      
       // 更新同步状态显示
       updateSyncStatus();
+      
+      // 添加用户信息显示和登出按钮
+      const user = getCurrentUser();
+      if (user) {
+        const settingsPage = document.getElementById('settings-page');
+        if (settingsPage) {
+          const userInfoDiv = document.createElement('div');
+          userInfoDiv.className = 'bg-primary/10 p-4 rounded-lg mb-4';
+          userInfoDiv.innerHTML = `
+            <div class="flex justify-between items-center">
+              <div class="font-medium text-primary">当前用户: ${user.username}</div>
+              <button id="logout-btn" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors">
+                登出
+              </button>
+            </div>
+          `;
+          
+          // 将用户信息添加到设置页面的顶部
+          const firstChild = settingsPage.firstChild;
+          if (firstChild) {
+            settingsPage.insertBefore(userInfoDiv, firstChild);
+          } else {
+            settingsPage.appendChild(userInfoDiv);
+          }
+          
+          // 添加登出事件
+          document.getElementById('logout-btn').addEventListener('click', function() {
+            if (confirm('确定要登出吗？')) {
+              logout();
+            }
+          });
+        }
+      }
       
       // 同步开关切换
       const syncToggle = document.getElementById('sync-toggle');
@@ -2115,7 +2500,7 @@
           syncEnabled = this.checked;
           localStorage.setItem('syncEnabled', syncEnabled);
           
-          if (syncEnabled) {
+          if (syncEnabled && isLoggedIn()) {
             syncContacts();
           }
           
@@ -2127,8 +2512,29 @@
       const syncNowBtn = document.getElementById('sync-now-btn');
       if (syncNowBtn) {
         syncNowBtn.addEventListener('click', function() {
-          if (!syncInProgress) {
+          if (!syncInProgress && isLoggedIn()) {
             syncContacts();
+          } else if (!isLoggedIn()) {
+            showToast('请先登录');
+          }
+        });
+      }
+      
+      // API地址配置
+      const apiUrlInput = document.getElementById('api-url-input');
+      const saveApiUrlBtn = document.getElementById('save-api-url-btn');
+      
+      if (apiUrlInput && saveApiUrlBtn) {
+        apiUrlInput.value = API_BASE_URL;
+        
+        saveApiUrlBtn.addEventListener('click', function() {
+          const newApiUrl = apiUrlInput.value.trim();
+          if (newApiUrl) {
+            localStorage.setItem('apiBaseUrl', newApiUrl);
+            API_BASE_URL = newApiUrl;
+            showToast('API地址已更新');
+          } else {
+            showToast('请输入有效的API地址');
           }
         });
       }
@@ -2152,6 +2558,14 @@
       // 设置定时同步
       if (syncEnabled) {
         setupPeriodicSync();
+      }
+      
+      // 页面加载时尝试同步（如果启用了同步）
+      if (syncEnabled) {
+        // 延迟执行，等待页面完全加载
+        setTimeout(() => {
+          syncContacts();
+        }, 1000);
       }
     }
     
@@ -2177,6 +2591,12 @@
     
     // 同步联系人数据
     function syncContacts() {
+      // 检查登录状态
+      if (!isLoggedIn()) {
+        showToast('请先登录');
+        return;
+      }
+      
       if (syncInProgress) return;
       
       syncInProgress = true;
@@ -2187,30 +2607,72 @@
         syncStatus.innerHTML = '<i class="fa fa-refresh sync-icon"></i><span>同步中...</span>';
       }
       
-      // 模拟API请求延迟
-      setTimeout(() => {
-        // 模拟API响应
-        const mockResponse = {
-          success: true,
-          data: contacts,
-          timestamp: new Date().toISOString()
+      // 准备同步数据，确保每个联系人都有时间戳
+      const syncData = contacts.map(contact => {
+        return {
+          ...contact,
+          id: contact.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          updatedAt: contact.updatedAt || new Date().toISOString(),
+          createdAt: contact.createdAt || new Date().toISOString()
         };
+      });
+      
+      // 发送数据到后端API，携带认证令牌
+      fetch(`${API_BASE_URL}/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem(USER_TOKEN)}`
+        },
+        body: JSON.stringify({ contacts: syncData })
+      })
+      .then(response => {
+        // 处理401错误（令牌过期或无效）
+        if (response.status === 401) {
+          showToast('登录已过期，请重新登录');
+          logout();
+          throw new Error('认证失败');
+        }
         
-        // 更新最后同步时间
-        lastSyncTime = new Date().toLocaleString();
-        localStorage.setItem('lastSyncTime', lastSyncTime);
+        if (!response.ok) {
+          throw new Error('网络响应异常');
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          // 用服务器返回的数据更新本地联系人
+          contacts = data.data || [];
+          saveContacts();
+          
+          // 更新最后同步时间
+          lastSyncTime = new Date().toLocaleString();
+          localStorage.setItem('lastSyncTime', lastSyncTime);
+          
+          // 更新同步状态
+          updateSyncStatus();
+          
+          // 显示同步成功提示
+          showToast('同步成功');
+        } else {
+          throw new Error(data.message || '同步失败');
+        }
+      })
+      .catch(error => {
+        console.error('同步错误:', error);
         
-        // 保存到本地存储
+        // 降级处理：至少保存到本地
         saveContacts();
         
-        // 更新同步状态
+        // 显示同步失败提示
+        showToast('同步失败，数据已保存到本地');
+        
+        // 更新同步状态为离线
         updateSyncStatus();
-        
-        // 显示同步成功提示
-        showToast('同步成功');
-        
+      })
+      .finally(() => {
         syncInProgress = false;
-      }, 1500);
+      });
     }
     
     // 设置定时同步
